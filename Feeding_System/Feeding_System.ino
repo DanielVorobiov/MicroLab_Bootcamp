@@ -1,9 +1,34 @@
-#include <Stepper.h>
+ #include <Stepper.h>
 #include "Arduino.h"
 #include <WiFi.h>
 #include "time.h"
 #include <ThingsBoard.h>
- 
+#include<Wire.h>
+#include <math.h>
+
+/****************************************************************/
+/*******************Init of the stepper**************************/
+/****************************************************************/
+
+const int MPU=0x68;
+int16_t AcX,AcY,AcZ,Tmp,GyX,GyY,GyZ;
+double pitch,roll;
+
+/*======================================*/
+
+//convert the accel data to pitch/roll
+void getAngle(int Vx,int Vy,int Vz) {
+double x = Vx;
+double y = Vy;
+double z = Vz;
+
+pitch = atan(x/sqrt((y*y) + (z*z)));
+roll = atan(y/sqrt((x*x) + (z*z)));
+//convert radians into degrees
+pitch = pitch * (180.0/3.14);
+roll = roll * (180.0/3.14) ;
+}
+
 /****************************************************************/
 /*******************Init of the stepper**************************/
 /****************************************************************/
@@ -22,7 +47,7 @@ Stepper myStepper = Stepper(stepsPerRevolution, 5, 16, 17, 4);
  
 // Defines pins numbers
 #define trig_pin 23
-#define echo_pin 22
+#define echo_pin 19
  
 // Ultrasonic setup of the trig and echo pins
 void UltrasonicSetup() {
@@ -128,7 +153,8 @@ WiFiClient wifiClient;
 ThingsBoard tb(wifiClient);
 
 int status = WL_IDLE_STATUS;
-unsigned long lastSend;
+unsigned long lastSend1;
+unsigned long lastSend2;
 
 
 void reconnect() {
@@ -155,10 +181,8 @@ void reconnect() {
   }
 }
 
+/**********************************************************/
 
-
-
- 
 void setup() {
  
 // Begin Serial communication at a baud rate of 115200:
@@ -176,10 +200,16 @@ void setup() {
  
 //Disconnect WiFi as it's no longer needed
 //  Disconnect_WiFi();
- 
+
+Wire.begin();
+Wire.beginTransmission(MPU);
+Wire.write(0x6B);
+Wire.write(0);
+Wire.endTransmission(true);
 }
  
- 
+/**************************************************************/
+
 void loop() {
  
  
@@ -187,7 +217,7 @@ void loop() {
   float distance = get_distance();
   float last_hour = -1;
 
-  if (local_time[0] == 7 || local_time[0] == 13 || local_time[0] == 19)
+  if (local_time[0] == 7 || local_time[0] == 11 || local_time[0] == 19)
   {
     if (local_time[0] != last_hour)
     {
@@ -206,7 +236,7 @@ void loop() {
     Serial.println(distance);
     Serial.println("In recipient este mancare");
     
-    if ( millis() - lastSend > 1000 )
+    if ( millis() - lastSend1 > 1000 )
     { 
       // Update and send only after 1 seconds
       Serial.println("Collecting ultrasonic  data.");
@@ -217,7 +247,7 @@ void loop() {
       //operatiile de obtinere a datelor de la sensor 
   
       tb.sendTelemetryFloat("Food_quantity", test_distance);
-      lastSend = millis();
+      lastSend1 = millis();
     }
   }
   else
@@ -225,6 +255,65 @@ void loop() {
     float test = 0;
     tb.sendTelemetryFloat("Food_quantity", test);
   }
-  tb.loop();
+    
+
   
+  tb.loop();
+
+/**********************************************************************/
+
+Wire.beginTransmission(MPU);
+Wire.write(0x3B);
+Wire.endTransmission(false);
+Wire.requestFrom(MPU,14,true);
+
+int AcXoff,AcYoff,AcZoff,GyXoff,GyYoff,GyZoff;
+int temp,toff;
+double t,tx,tf;
+
+//Acceleration data correction
+AcXoff = -950;
+AcYoff = -300;
+AcZoff = 0;
+
+//Temperature correction
+toff = -1600;
+
+//Gyro correction
+GyXoff = 480;
+GyYoff = 170;
+GyZoff = 210;
+
+//read accel data
+AcX=(Wire.read()<<8|Wire.read()) + AcXoff;
+AcY=(Wire.read()<<8|Wire.read()) + AcYoff;
+AcZ=(Wire.read()<<8|Wire.read()) + AcYoff;
+
+
+//read gyro data
+GyX=(Wire.read()<<8|Wire.read()) + GyXoff;
+GyY=(Wire.read()<<8|Wire.read()) + GyYoff;
+GyZ=(Wire.read()<<8|Wire.read()) + GyZoff;
+
+//get pitch/roll
+getAngle(AcX,AcY,AcZ);
+
+//send the data out the serial port
+Serial.print("Angle: ");
+Serial.print("Pitch = "); Serial.print(pitch);
+Serial.print(" | Roll = "); Serial.println(roll);
+
+
+      if ( millis() - lastSend2 > 1000 )
+      { 
+        // Update and send only after 1 seconds
+        Serial.println("Collecting gyroscope data.");
+  
+        //operatiile de obtinere a datelor de la gyroscope
+    
+        tb.sendTelemetryFloat("Pitch", pitch );
+        lastSend2 = millis();
+      }
+     myStepper.step(stepsPerRevolution);
+      delay(5000);
 }
