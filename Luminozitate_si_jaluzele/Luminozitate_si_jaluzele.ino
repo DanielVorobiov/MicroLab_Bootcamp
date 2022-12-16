@@ -11,8 +11,8 @@ Servo_ESP32 servo1;
 int status = WL_IDLE_STATUS;
 unsigned long lastSend;
 
-const char*_ssid       = "Diana";
-const char*_password   = "069326747";
+const char*_ssid       = "";
+const char*_password   = "";
 char thingsboardServer[] = "demo.thingsboard.io";
 
 WiFiClient wifiClient;
